@@ -1281,9 +1281,12 @@ fi
 
 # Insert the environment variables into the deployment manifest
 if [ -n "$OPENEMR_ENV_VARS" ]; then
-    # Find the line with the comment about conditional environment variables and insert after it
-    sed -i.bak "/# OPENEMR_SETTING_rest_portal_api will be added if portal is enabled/a\\
-$OPENEMR_ENV_VARS" deployment.yaml
+    # Find the line with the comment about conditional environment variables and insert after it.
+    # Use awk instead of `sed a\` for portability (BSD/macOS sed rejects the multi-line append).
+    awk -v ins="$OPENEMR_ENV_VARS" '
+        { print }
+        /# OPENEMR_SETTING_rest_portal_api will be added if portal is enabled/ { print ins }
+    ' deployment.yaml > deployment.yaml.tmp && mv deployment.yaml.tmp deployment.yaml
 fi
 sed -i.bak "s/\${AWS_ACCOUNT_ID}/$AWS_ACCOUNT_ID/g" logging.yaml
 sed -i.bak "s/\${AWS_REGION}/$AWS_REGION/g" logging.yaml
