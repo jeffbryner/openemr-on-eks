@@ -80,9 +80,9 @@ module "eks" {
   # Floci only seeds classic EKS managed policies (not Auto Mode policies like
   # AmazonEKSNetworkingPolicy), so disable Auto Mode under Floci.
   compute_config = local.use_floci ? null : {
-    enabled    = true                          # Enable Auto Mode for simplified node management
-    node_pools = ["general-purpose", "system"] # Two node pools: general workloads and system pods
-
+    enabled        = true                          # Enable Auto Mode for simplified node management
+    node_pools     = ["general-purpose", "system"] # Two node pools: general workloads and system pods
+    instance_types = ["t3.medium", "t3.large"]     # Cost-effective instance types for general workloads
     # Instance Metadata Service (IMDS) configuration for security
     # IMDS allows pods to access instance metadata for AWS service integration
     metadata_options = {
@@ -133,11 +133,11 @@ module "eks" {
   # CloudWatch logging configuration
   # Enable comprehensive logging for security monitoring and troubleshooting
   enabled_log_types = [
-    "api",               # API server logs
-    "audit",             # Audit logs for security monitoring
-    "authenticator",     # Authentication logs
-    "controllerManager", # Controller manager logs
-    "scheduler"          # Scheduler logs
+    #"api",               # API server logs
+    "audit",         # Audit logs for security monitoring
+    "authenticator", # Authentication logs
+    #"controllerManager", # Controller manager logs
+    #"scheduler"          # Scheduler logs
   ]
 
   # --- Managed Add-ons Configuration ---
@@ -153,9 +153,13 @@ module "eks" {
   }
 
   # Timeout configuration for cluster operations
-  # Longer timeout accommodates the time needed for cluster provisioning
+  # Longer timeouts accommodate the time needed for cluster provisioning.
+  # Auto Mode provisions managed node pools and IAM/networking before returning,
+  # which can exceed the default 30m under load (observed slow provisioning).
   timeouts = {
-    create = "30m" # 30 minutes for cluster creation
+    create = "60m" # 60 minutes for cluster creation
+    update = "60m" # 60 minutes for cluster updates
+    delete = "60m" # 60 minutes for cluster deletion (replacement of FAILED cluster)
   }
 
   # Resource tagging for cost allocation and resource management
