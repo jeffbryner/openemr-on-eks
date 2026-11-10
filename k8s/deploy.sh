@@ -45,6 +45,15 @@
 # This ensures the script fails fast and doesn't continue with undefined state
 set -euo pipefail
 
+# Neutralize user-environment grep colorization. A shell with
+# GREP_OPTIONS=--color=always (or an equivalent grep alias) forces grep to emit
+# ANSI color escape codes even when its output is piped/captured. That pollutes
+# values captured via grep (e.g. CLUSTER_NAME from `terraform output`), producing
+# names like $'\e[01;31m\e[Kopenemr-eks\e[m\e[K' that then fail lookups such as
+# `aws eks describe-cluster`. Force deterministic, color-free grep behavior.
+export GREP_OPTIONS=''
+unset GREP_COLORS 2>/dev/null || true
+
 # =============================================================================
 # OUTPUT FORMATTING CONFIGURATION
 # =============================================================================
@@ -1770,7 +1779,16 @@ log_success "OpenEMR deployment completed successfully!"
 
 # Apply Horizontal Pod Autoscaler for intelligent scaling
 log_step "Setting up intelligent autoscaling..."
-kubectl apply -f hpa.yaml
+# Use server-side apply so re-runs are idempotent even when the HPA/PDB were
+# originally created with `kubectl create` (which omits the last-applied
+# annotation, causing a client-side `apply` to fall back to create and fail with
+# AlreadyExists). Fall back to replace, and never let this non-critical step
+# abort the script (set -e) before the ingress stage below runs.
+if ! kubectl apply --server-side --force-conflicts -f hpa.yaml; then
+    log_warning "Server-side apply of hpa.yaml failed; attempting replace..."
+    kubectl replace -f hpa.yaml || \
+        log_warning "HPA/PDB already present; continuing without changes"
+fi
 log_success "HPA configured: Replicas will autoscale based on CPU/memory usage"
 log_success "EKS Auto Mode will provision nodes as needed"
 
