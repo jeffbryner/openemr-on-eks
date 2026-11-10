@@ -127,11 +127,16 @@ spec:
                     fi
                     # Restart Apache so PHP re-reads the fixed ini. Retry until
                     # Apache is actually up (postStart can win the race with it).
+                    # Wait for Apache to be ready before restarting it
                     j=0
                     while [ $j -lt 60 ]; do
-                      httpd -k restart 2>/dev/null && break
+                      if curl -sf http://localhost/interface/login/login.php -o /dev/null 2>/dev/null; then
+                        httpd -k graceful   # graceful is safer than restart — doesn't kill PID 1
+                        break
+                      fi
                       j=$((j+1)); sleep 2
                     done
+
                     break
                   fi
                   i=$((i+1)); sleep 5

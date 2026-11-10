@@ -1283,10 +1283,20 @@ fi
 if [ -n "$OPENEMR_ENV_VARS" ]; then
     # Find the line with the comment about conditional environment variables and insert after it.
     # Use awk instead of `sed a\` for portability (BSD/macOS sed rejects the multi-line append).
-    awk -v ins="$OPENEMR_ENV_VARS" '
+    # NOTE: do NOT pass the multi-line block via `awk -v` — macOS/BSD awk rejects a
+    # variable value containing literal newlines ("awk: newline in string"), which
+    # silently drops these env vars. Instead write the block to a temp file and read
+    # it with getline at the marker, which is portable across BSD and GNU awk.
+    _env_vars_file="$(mktemp 2>/dev/null || echo /tmp/openemr_env_vars.$$)"
+    printf '%s\n' "$OPENEMR_ENV_VARS" > "$_env_vars_file"
+    awk -v insfile="$_env_vars_file" '
         { print }
-        /# OPENEMR_SETTING_rest_portal_api will be added if portal is enabled/ { print ins }
+        /# OPENEMR_SETTING_rest_portal_api will be added if portal is enabled/ {
+            while ((getline _line < insfile) > 0) print _line
+            close(insfile)
+        }
     ' deployment.yaml > deployment.yaml.tmp && mv deployment.yaml.tmp deployment.yaml
+    rm -f "$_env_vars_file"
 fi
 sed -i.bak "s/\${AWS_ACCOUNT_ID}/$AWS_ACCOUNT_ID/g" logging.yaml
 sed -i.bak "s/\${AWS_REGION}/$AWS_REGION/g" logging.yaml
@@ -1365,8 +1375,14 @@ else
 fi
 
 # Analyze current cluster state
-analyze_cluster_state
-cluster_state_result=$?
+# NOTE: analyze_cluster_state() intentionally returns non-zero codes (1 = needs
+# cleanup, 2 = already running/skip deployment). Because the script runs under
+# `set -e`, calling it as a bare statement would abort immediately on any
+# non-zero return (before $? could be captured), silently skipping the fast-path
+# block below (including the ingress apply). Capture the code via `|| ...` so a
+# non-zero return does not trip `set -e`.
+cluster_state_result=0
+analyze_cluster_state || cluster_state_result=$?
 
 if [ $cluster_state_result -eq 2 ]; then
     log_success "OpenEMR is already running successfully - skipping deployment"
