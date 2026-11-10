@@ -1360,26 +1360,34 @@ fi
 # Use passwords from Terraform (retrieved above)
 log_step "Using infrastructure passwords from Terraform..."
 
-# Check if OpenEMR is already installed and configured
-if check_openemr_installation; then
-    log_success "Using existing OpenEMR installation"
-    log_info "Admin credentials will not be changed - existing credentials remain valid"
-
-    # Get existing admin password from secret
-    if kubectl get secret openemr-app-credentials -n "$NAMESPACE" >/dev/null 2>&1; then
-        ADMIN_PASSWORD=$(kubectl get secret openemr-app-credentials -n "$NAMESPACE" -o jsonpath='{.data.admin-password}' | base64 -d 2>/dev/null || echo "")
-        if [ -n "$ADMIN_PASSWORD" ]; then
-            log_success "Retrieved existing admin password from secret"
-        else
-            log_warning "Could not retrieve existing admin password - generating new one"
-            ADMIN_PASSWORD=$(generate_password)
-        fi
+# Determine the admin password.
+#
+# The `openemr-app-credentials` secret is the SINGLE SOURCE OF TRUTH for the
+# admin password and MUST stay in sync with the password OpenEMR wrote into the
+# database at install time.
+#
+# Previously this keyed off check_openemr_installation() (a DB-state probe). That
+# was fragile: if that probe returned "not installed" on a re-run while the DB
+# was in fact already installed, a brand-new password was generated into the
+# secret WITHOUT updating the DB -> secret and DB desynced -> admin locked out
+# (observed in production). The install-state probe must NOT influence the
+# password.
+#
+# Correct, idempotent rule:
+#   - If the secret already exists, ALWAYS reuse its password. Never regenerate
+#     (regenerating would desync it from the already-installed DB).
+#   - Only generate a fresh password when the secret does not exist yet, i.e. a
+#     genuine first install (OpenEMR will then install the DB with this value).
+if kubectl get secret openemr-app-credentials -n "$NAMESPACE" >/dev/null 2>&1; then
+    ADMIN_PASSWORD=$(kubectl get secret openemr-app-credentials -n "$NAMESPACE" -o jsonpath='{.data.admin-password}' | base64 -d 2>/dev/null || echo "")
+    if [ -n "$ADMIN_PASSWORD" ]; then
+        log_success "Reusing existing admin password from openemr-app-credentials secret (source of truth)"
     else
-        log_warning "No existing app credentials secret found - generating new password"
+        log_warning "Secret exists but has no admin-password field - generating a new one"
         ADMIN_PASSWORD=$(generate_password)
     fi
 else
-    log_info "Proceeding with new OpenEMR installation"
+    log_info "No existing app credentials secret found - generating admin password for first install"
     ADMIN_PASSWORD=$(generate_password)
 fi
 
@@ -1853,42 +1861,22 @@ if [ -n "$LB_URL" ]; then
   fi
 fi
 
-# Save credentials beside the source deployment script, not in the temporary
-# manifest-rendering directory.
-CREDENTIALS_FILE="$SCRIPT_DIR/openemr-credentials.txt"
-log_step "Saving credentials to $CREDENTIALS_FILE..."
-if [ -f "$CREDENTIALS_FILE" ]; then
-  # Create backup of existing credentials file
-  BACKUP_FILE="$SCRIPT_DIR/openemr-credentials-$(date +%Y%m%d-%H%M%S).txt"
-  cp "$CREDENTIALS_FILE" "$BACKUP_FILE"
-  chmod 600 "$BACKUP_FILE"
-  log_warning "Existing credentials file backed up to: $BACKUP_FILE"
-fi
-
-umask 077
-cat > "$CREDENTIALS_FILE" << EOF
-OpenEMR Deployment Credentials
-==============================
-Admin Username: admin
-Admin Password: $ADMIN_PASSWORD
-Database Password: $AURORA_PASSWORD
-Redis Password: $REDIS_PASSWORD
-LoadBalancer URL: ${LB_SCHEME}://$LB_URL
-SSL Mode: $SSL_MODE
-EOF
-chmod 600 "$CREDENTIALS_FILE"
-
-# Add certificate ARN if using ACM
-if [ "$SSL_MODE" = "acm" ]; then
-  echo "Certificate ARN: $SSL_CERT_ARN" >> "$CREDENTIALS_FILE"
-fi
-
-# Add generation timestamp
-echo "" >> "$CREDENTIALS_FILE"
-echo "Generated on: $(date)" >> "$CREDENTIALS_FILE"
-
-log_success "Credentials saved to $CREDENTIALS_FILE"
-log_success "Please store these credentials securely!"
+# Credentials are intentionally NOT written to a plaintext file on disk.
+#
+# Historically this script dumped admin/DB/Redis passwords into
+# openemr-credentials*.txt. That was both a security risk (plaintext secrets at
+# rest, easy to commit by accident) and a correctness hazard: the file could go
+# stale across cluster rebuilds and desync from the real secret, causing people
+# to try an outdated password (observed in production). Kubernetes Secrets are
+# now the single source of truth; retrieve credentials on demand.
+log_step "Credential retrieval"
+log_info "Credentials are stored only in Kubernetes Secrets (no plaintext file is written)."
+log_info "Retrieve them on demand with:"
+log_info "  Admin password:  kubectl get secret openemr-app-credentials -n $NAMESPACE -o jsonpath='{.data.admin-password}' | base64 -d; echo"
+log_info "  DB password:     kubectl get secret openemr-db-credentials -n $NAMESPACE -o jsonpath='{.data.mysql-password}' | base64 -d; echo"
+log_info "  Redis password:  kubectl get secret openemr-redis-credentials -n $NAMESPACE -o jsonpath='{.data.redis-password}' | base64 -d; echo"
+log_info "  Admin username:  admin"
+log_success "Credential source of truth: Kubernetes Secrets in namespace '$NAMESPACE'"
 
 echo ""
 log_header "🎉 DEPLOYMENT SUCCESSFUL!"
