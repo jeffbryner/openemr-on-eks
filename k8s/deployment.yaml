@@ -159,6 +159,21 @@ spec:
               rm -f "$SITES_DIR/docker-leader"
           fi
 
+          # ---------------------------------------------------------------------------
+          # Install the system CA certificate bundle
+          # ---------------------------------------------------------------------------
+          # The upstream openemr/openemr image ships without a complete ca-certificates
+          # bundle, so outbound TLS from the pod (e.g. Google reCAPTCHA verification)
+          # fails with certificate errors. Install/refresh the bundle on every start.
+          # Try the image's configured repos first; fall back to the dl-cdn repo that
+          # matches the image's actual Alpine version (derived from /etc/alpine-release
+          # so this survives base-image upgrades rather than pinning a fixed version).
+          echo "=== Installing system CA certificate bundle ==="
+          apk add --no-cache ca-certificates || \
+          apk add --no-cache --repository "http://dl-cdn.alpinelinux.org/alpine/v$(cut -d. -f1,2 /etc/alpine-release)/main" ca-certificates || \
+          echo "WARNING: ca-certificates install failed; outbound TLS may not work"
+          update-ca-certificates || echo "WARNING: update-ca-certificates failed"
+
           # Download AWS root CA certificates for secure connections to AWS services
           echo "=== Downloading SSL certificates ==="
           # Download Redis CA certificate for secure ElastiCache connections
