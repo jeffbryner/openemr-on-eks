@@ -29,7 +29,7 @@ redis_max_ecpu_per_second = 5000 # ECPUs
 # Security Configuration
 enable_public_access = true # Set to false for maximum security
 # allowed_cidr_blocks = ["203.0.113.0/24"]  # Uncomment to specify custom IPs
-enable_waf = true
+enable_waf = false
 
 # Domain Configuration (Optional)
 # domain_name = "openemr.yourdomain.com"  # Leave empty for LoadBalancer access only
@@ -69,20 +69,20 @@ audit_logs_retention_days = 365 # Audit logs for compliance
 # See docs/AUTOSCALING_GUIDE.md for detailed guidance
 
 # Default Configuration (Balanced - Recommended for most organizations)
-openemr_min_replicas                     = 2   # Minimum replicas for high availability
-openemr_max_replicas                     = 10  # Maximum replicas for peak load
-openemr_cpu_utilization_threshold        = 70  # CPU percentage to trigger scaling
-openemr_memory_utilization_threshold     = 80  # Memory percentage to trigger scaling
-openemr_scale_down_stabilization_seconds = 300 # Wait 5 minutes before scaling down
-openemr_scale_up_stabilization_seconds   = 60  # Wait 1 minute before scaling up
+# openemr_min_replicas                     = 2   # Minimum replicas for high availability
+# openemr_max_replicas                     = 10  # Maximum replicas for peak load
+# openemr_cpu_utilization_threshold        = 70  # CPU percentage to trigger scaling
+# openemr_memory_utilization_threshold     = 80  # Memory percentage to trigger scaling
+# openemr_scale_down_stabilization_seconds = 300 # Wait 5 minutes before scaling down
+# openemr_scale_up_stabilization_seconds   = 60  # Wait 1 minute before scaling up
 
 # Small Clinic Configuration (10-50 users)
-# openemr_min_replicas                    = 2
-# openemr_max_replicas                    = 4
-# openemr_cpu_utilization_threshold       = 75
-# openemr_memory_utilization_threshold    = 80
-# openemr_scale_down_stabilization_seconds = 600  # 10 minutes
-# openemr_scale_up_stabilization_seconds   = 60   # 1 minute
+openemr_min_replicas                     = 2
+openemr_max_replicas                     = 4
+openemr_cpu_utilization_threshold        = 75
+openemr_memory_utilization_threshold     = 80
+openemr_scale_down_stabilization_seconds = 600 # 10 minutes
+openemr_scale_up_stabilization_seconds   = 60  # 1 minute
 
 # Medium Practice Configuration (50-200 users)
 # openemr_min_replicas                    = 3
@@ -121,5 +121,5 @@ openemr_version = "8.5.0" # OpenEMR version to deploy
 
 # OpenEMR Feature Configuration (SECURITY: Disabled by default)
 # Only enable these features if specifically needed for your use case
-enable_openemr_api    = false # Enable REST API and FHIR endpoints
-enable_patient_portal = false # Enable patient portal functionality
+enable_openemr_api    = true # Enable REST API and FHIR endpoints
+enable_patient_portal = true # Enable patient portal functionality
